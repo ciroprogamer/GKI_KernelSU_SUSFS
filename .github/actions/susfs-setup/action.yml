@@ -46,5 +46,14 @@ runs:
         echo "SUSFS_COMMIT=$SUSFS_COMMIT" >> "$GITHUB_ENV"
         echo "Using SUSFS commit: $SUSFS_COMMIT"
 
-        patch -p1 < "${{ github.workspace }}/kernel_patches/pershoot/susfs4ksu/0001-pershoot-Allow-core-to-be-built-with-no-features.patch"
-        patch -p1 < "${{ github.workspace }}/kernel_patches/pershoot/susfs4ksu/0002-pershoot-Implement-SuSFS-and-Toolkit-coexistence.patch"
+        # pershoot patches were removed from WildKernels/kernel_patches (4285cd1);
+        # fetch his gki-android14-6.1-dev branch and cherry-pick the top-2 live
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        retry git remote add pershoot https://gitlab.com/pershoot/susfs4ksu.git
+        retry git fetch pershoot gki-android14-6.1-dev
+        NEWEST="$(git rev-parse FETCH_HEAD)"
+        echo "pershoot top-2 to cherry-pick:"
+        git log --oneline -2 FETCH_HEAD
+        git cherry-pick "${NEWEST}^" "${NEWEST}"
