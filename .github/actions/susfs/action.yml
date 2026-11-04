@@ -191,6 +191,23 @@ runs:
         sublevel: ${{ inputs.sublevel }}
         os_patch_level: ${{ inputs.os_patch_level }}
 
+    - name: Runtime fixes in the root's SUSFS-era code
+      # Three bugs found reviewing pershoot's KernelSU-Next dev-susfs: an
+      # execve cred-reference leak (sucompat.c), a threaded throne-tracker race
+      # that can stop manager tracking until reboot, and the priority uid
+      # filter never being refreshed in threaded mode. Each fix is a no-op
+      # when its pattern is absent, so other roots pass through untouched.
+      if: inputs.enabled == 'true'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        for d in */kernel; do
+          [ -d "$d/manager" ] || continue
+          python3 "${{ github.workspace }}/.github/scripts/ksu_susfs_runtime_fixes.py" "$d"
+        done
+
     # (susfs-revert-patches removed 2026-10-27: its only live step rewrote
     # `goto show_pad;`, a line SUSFS stopped emitting in ef16cbc (2026-05-10);
     # the gated sources no longer contain it either, so the step was a no-op.)
