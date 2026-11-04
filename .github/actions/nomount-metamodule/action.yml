@@ -59,12 +59,41 @@ runs:
             -Wl,--entry=_start nm.c -o ../../bin/nm-arm
         )
 
+        # customize.sh (since the LKM installer rework) unconditionally runs
+        #   mv "$MODPATH/bin/lkmloader-$ARCH_BIN" "$MODPATH/lkm/lkmloader"
+        # before it probes for the built-in driver, so a zip without lkmloader
+        # and an lkm/ directory prints mv/chown errors on every install.
+        # Build lkmloader exactly as NoMount's own CI does and ship an lkm/
+        # directory; on our kernels the driver is built in, so the installer
+        # takes the BUILTIN path and removes lkm/ again.
+        loader_dir="${RUNNER_TEMP}/lkmloader-source"
+        git clone --depth=1 https://github.com/maxsteeel/lkmloader.git "$loader_dir"
+        loader_commit="$(git -C "$loader_dir" rev-parse HEAD)"
+        (
+          cd "$loader_dir"
+          zig cc -target aarch64-linux -Oz -mcmodel=tiny -static \
+            -Wl,--gc-sections,-z,norelro -fno-unwind-tables -fno-ident -flto \
+            -fmerge-all-constants -fomit-frame-pointer \
+            src/lkmloader.c -o "$source_dir/bin/lkmloader-arm64"
+          zig cc -target arm-linux -Oz -static \
+            -Wl,--gc-sections,-z,norelro -fno-unwind-tables -fno-ident -flto \
+            -fmerge-all-constants -fomit-frame-pointer \
+            src/lkmloader.c -o "$source_dir/bin/lkmloader-arm"
+        )
+
         cp -a "$source_dir/module" "$module_dir"
-        mkdir -p "$module_dir/bin"
+        mkdir -p "$module_dir/bin" "$module_dir/lkm"
         install -m 0755 "$source_dir/bin/nm-arm64" "$module_dir/bin/nm-arm64"
         install -m 0755 "$source_dir/bin/nm-arm" "$module_dir/bin/nm-arm"
+        install -m 0755 "$source_dir/bin/lkmloader-arm64" "$module_dir/bin/lkmloader-arm64"
+        install -m 0755 "$source_dir/bin/lkmloader-arm" "$module_dir/bin/lkmloader-arm"
         sed -i "s/^versionCode=.*/versionCode=1/" "$module_dir/module.prop"
         printf '%s\n' "$actual_commit" > "$module_dir/NOMOUNT_SOURCE_COMMIT"
+        printf '%s\n' "$loader_commit" > "$module_dir/LKMLOADER_SOURCE_COMMIT"
+        # upload-artifact drops empty directories (and dotfiles), so keep lkm/
+        # alive in the artifact with a visible placeholder.
+        printf '%s\n' "NoMount is built into this kernel (CONFIG_NOMOUNT=y); no .ko is shipped." \
+          > "$module_dir/lkm/README.txt"
         (
           cd "$module_dir"
           zip -qr "$module_zip" .
