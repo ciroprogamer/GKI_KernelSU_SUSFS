@@ -25,6 +25,8 @@
 
 For KernelSU-Next every moving part resolves to its newest commit at run time, in either commit mode: pershoot's `KernelSU-Next@dev-susfs` (rebased onto the official `dev` tip; the manager APK is paired with that upstream commit), simonpunk's `susfs4ksu@gki-android14-6.1` plus pershoot's SUSFS fixes, `nomount@dev`, Baseband-guard, Droidspaces-OSS, USB-Arsenal, `kernel_patches` and AnyKernel3.
 
+The **NoMount branch** input switches NoMount from `dev` (default, newest) to `master` (v2.2.0 release). Recent `dev` work pins `/data`'s superblock for the life of a built-in driver, so `/data` is not cleanly torn down at reboot; pick `master` if that matters more to you than the newest fixes.
+
 Left off on purpose: **fanotify** (enabling it moves `struct user_namespace` / `struct fsnotify_group` and breaks prebuilt vendor modules; the opt-in `use_fanotify` port avoids that but is new) and **Performance** (experimental, opt-in upstream).
 
 Download the `*-AnyKernel3`, `*-BuildInfo`, KernelSU-Next manager and `NoMount-Metamodule` artifacts, keep the stock `boot.img`, then follow the [Installation Guide](docs/installation.md). If a run cannot publish its `nightly` prerelease, set **Settings → Actions → General → Workflow permissions** to *Read and write*.
