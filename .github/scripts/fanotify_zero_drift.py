@@ -400,7 +400,7 @@ def replace_ucounts(root: str) -> None:
                  r"\treturn ERR_PTR\(ret\);\n",
                  "out_put_mark_charge:\n"
                  "\tif (!FAN_GROUP_FLAG(group, FAN_UNLIMITED_MARKS))\n"
-                 "\t\tfanotify_account_put_mark(group->user_ns);\n"
+                 "\t\tfanotify_account_put_mark(fanotify_group_priv(group)->account_ns);\n"
                  "\treturn ERR_PTR(ret);\n", src, count=1)
     src = src.replace("goto out_dec_ucounts;", "goto out_put_mark_charge;")
     write(usr, src)
@@ -547,6 +547,11 @@ def verify(root: str) -> None:
     ):
         if needle not in read(os.path.join(root, rel)):
             problems.append(f"{rel}: missing {needle!r}")
+    for rel in ("fs/notify/fanotify/fanotify.c", "fs/notify/fanotify/fanotify_user.c"):
+        path = os.path.join(root, rel)
+        if os.path.exists(path) and "group->user_ns" in read(path):
+            problems.append(f"{rel}: group->user_ns still referenced (absent before 6.12)")
+
     un = read(os.path.join(root, "include/linux/user_namespace.h"))
     if "UCOUNT_FANOTIFY" in un:
         problems.append("user_namespace.h: UCOUNT_FANOTIFY_* still declared")
