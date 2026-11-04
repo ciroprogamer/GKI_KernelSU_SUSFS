@@ -269,6 +269,10 @@ def move_struct_out_of_union(backend_h: str) -> None:
         die("fsnotify_backend.h: fanotify union member not found")
     body = m.group(1)
     body = re.sub(r"\n\t*struct ucounts \*ucounts;", "", body)
+    # our own namespace reference, so the accounting works on trees without
+    # group->user_ns (6.1 and older do not store it on the group)
+    body = body.rstrip() + "\n\t/* this group's user namespace, refcounted by us */\n" \
+           "\tstruct user_namespace *account_ns;"
 
     # remove the member, then the #ifdef that held it
     src = src[: m.start()] + src[m.end():]
@@ -287,6 +291,20 @@ def move_struct_out_of_union(backend_h: str) -> None:
 
     write(backend_h, src)
     print("  fsnotify_backend.h: struct moved out of the union verbatim + accessor added")
+
+
+def rewrite_macro(root: str) -> None:
+    """FAN_GROUP_FLAG() expands to group->fanotify_data.flags."""
+    for rel in ("include/linux/fanotify.h", "fs/notify/fanotify/fanotify.h"):
+        path = os.path.join(root, rel)
+        if not os.path.exists(path):
+            continue
+        src = read(path)
+        new = re.sub(r"\(\s*group\s*\)->fanotify_data\.flags",
+                     "fanotify_group_priv(group)->flags", src)
+        if new != src:
+            write(path, new)
+            print(f"  {rel}: FAN_GROUP_FLAG() rewritten")
 
 
 def rewrite_accessors(root: str) -> None:
@@ -357,7 +375,9 @@ def replace_ucounts(root: str) -> None:
                      r"\t\}\n", re.S)
     if pat.search(src):
         src = pat.sub("\t/* Enforce group limits per user in all containing user ns */\n"
-                      "\tif (!fanotify_account_group(current_user_ns())) {\n"
+                      "\tfanotify_group_priv(group)->account_ns =\n"
+                      "\t\tget_user_ns(current_user_ns());\n"
+                      "\tif (!fanotify_account_group(fanotify_group_priv(group)->account_ns)) {\n"
                       "\t\tfd = -EMFILE;\n"
                       "\t\tgoto out_destroy_group;\n"
                       "\t}\n", src, count=1)
@@ -372,7 +392,7 @@ def replace_ucounts(root: str) -> None:
                      r"\t\treturn ERR_PTR\(-ENOSPC\);\n")
     if pat.search(src):
         src = pat.sub("\tif (!FAN_GROUP_FLAG(group, FAN_UNLIMITED_MARKS) &&\n"
-                      "\t    !fanotify_account_mark(group->user_ns))\n"
+                      "\t    !fanotify_account_mark(fanotify_group_priv(group)->account_ns))\n"
                       "\t\treturn ERR_PTR(-ENOSPC);\n", src, count=1)
     src = re.sub(r"out_dec_ucounts:\n"
                  r"\tif \(!FAN_GROUP_FLAG\(group, FAN_UNLIMITED_MARKS\)\)\n"
@@ -397,7 +417,8 @@ def replace_ucounts(root: str) -> None:
                      r"\t\tdec_ucount\(" + ACC + r"ucounts, UCOUNT_FANOTIFY_MARKS\);\n")
     if pat.search(src):
         src = pat.sub("\tif (!FAN_GROUP_FLAG(group, FAN_UNLIMITED_MARKS))\n"
-                      "\t\tfanotify_account_put_mark(group->user_ns);\n", src, count=1)
+                      "\t\tfanotify_account_put_mark(fanotify_group_priv(group)->account_ns);\n",
+                      src, count=1)
     write(fan, src)
     print("  fanotify.c: release paths -> fanotify_account_put_*()")
 
@@ -411,6 +432,16 @@ def replace_ucounts(root: str) -> None:
         print("  user_namespace.h: UCOUNT_FANOTIFY_* removed (stock ucount layout)")
     elif "UCOUNT_FANOTIFY" in src:
         die("user_namespace.h: UCOUNT_FANOTIFY members present but not in the expected shape")
+
+    # kernel/ucount.c enumerates one sysctl entry per type and asserts the count
+    uc = os.path.join(root, "kernel/ucount.c")
+    if os.path.exists(uc):
+        usrc = read(uc)
+        block = re.compile(r"#ifdef CONFIG_FANOTIFY\n(?:\tUCOUNT_ENTRY\(\"max_fanotify_\w+\"\),\n)+#endif\n")
+        if block.search(usrc):
+            usrc = block.sub("", usrc, count=1)
+            write(uc, usrc)
+            print("  kernel/ucount.c: fanotify sysctl entries removed")
 
 
 def retarget_sysctls(root: str) -> None:
@@ -452,7 +483,8 @@ def free_priv(root: str) -> None:
         die("fanotify.c: fanotify_free_group_priv() not found")
 
     head, body, tail = m.group(1), m.group(2), m.group(3)
-    body = "\tfanotify_account_put_group(group->user_ns);\n" + body
+    body = ("\tfanotify_account_put_group(fanotify_group_priv(group)->account_ns);\n"
+            "\tput_user_ns(fanotify_group_priv(group)->account_ns);\n") + body
     body = body.rstrip("\n") + "\n\n\tkfree(group->private);\n\tgroup->private = NULL;\n"
     src = src[: m.start()] + head + body + tail + src[m.end():]
     write(path, src)
@@ -538,6 +570,7 @@ def main() -> None:
     else:
         move_struct_out_of_union(backend)
         rewrite_accessors(root)
+        rewrite_macro(root)
         insert_accounting(root)
         allocate_priv(root)
         retarget_sysctls(root)
