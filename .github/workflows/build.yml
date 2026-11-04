@@ -415,6 +415,12 @@ jobs:
           version: ${{ inputs.version }}
           kernel_version: ${{ inputs.kernel_version }}
 
+      - name: fanotify (ported for zero ABI drift)
+        if: contains(inputs.feature_set, 'FANOTIFY')
+        uses: ./.github/actions/fanotify
+        with:
+          version: ${{ inputs.version }}
+
       - name: Apply NTSync Patches
         if: contains(inputs.feature_set, 'NTSync')
         uses: ./.github/actions/ntsync
