@@ -1,0 +1,87 @@
+From b3a45d507d34b5a31a337ef207c77fbe6ec00284 Mon Sep 17 00:00:00 2001
+From: pershoot <28478728-pershoot@users.noreply.gitlab.com>
+Date: Sun, 1 Nov 2026 16:31:00 -0500
+Subject: [PATCH] kernel_patches: fs/susfs: Enhance priority UID filter
+
+-Accept raw numeric UIDs (bypasses VFS stat (apply before CE unlock))
+ -Pkg name resolves once CE storage unlock
+-Add wildcard 'all'/'*' for blanket UID filtering
+
+-Accommodate:
+ -11/1/26: 'kernel: priority_uid_filter: Refactor uid parser' (upstream: susfs: 0d5b1ce)
+           Retain skip_failed (true); preserve blanket filter reset; align multi-user UID
+---
+ kernel_patches/fs/susfs.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/kernel_patches/fs/susfs.c b/kernel_patches/fs/susfs.c
+index aff87f9..6fd17bd 100644
+--- a/kernel_patches/fs/susfs.c
++++ b/kernel_patches/fs/susfs.c
+@@ -1412,6 +1412,7 @@ static DEFINE_MUTEX(susfs_mutex_lock_priority_uid_filter);
+ static char *susfs_priority_app_strings = NULL;
+ /* Ensures that there is only one resolving thread running at the same time */
+ static atomic_t susfs_priority_app_strings_running = ATOMIC_INIT(0);
++static bool susfs_priority_uid_filter_all = false;
+ 
+ /*
+  * Checks whether the given string is a valid app package name.
+@@ -1561,6 +1562,29 @@ static int susfs_parse_priority_app_names(char *app_str, unsigned long *bits, bo
+ 			continue;
+ 		}
+ 
++		/* Blanket wildcard filter */
++		if (!strcmp(token, "all") || !strcmp(token, "*")) {
++			WRITE_ONCE(susfs_priority_uid_filter_all, true);
++			SUSFS_LOGI("priority_uid_filter: blanket filter enabled\n");
++			continue;
++		}
++
++		/* Accept raw numeric UIDs */
++		if (kstrtouint(token, 10, &uid) == 0) {
++			uid = uid % 100000;
++			if (uid < SUSFS_PRIORITY_UID_FILTER_MIN_UID || uid > SUSFS_PRIORITY_UID_FILTER_MAX_UID) {
++				SUSFS_LOGE("uid %u is out of allowed range [%d, %d]\n",
++					uid, SUSFS_PRIORITY_UID_FILTER_MIN_UID,
++					SUSFS_PRIORITY_UID_FILTER_MAX_UID);
++				if (!skip_failed)
++					return -EINVAL;
++				continue;
++			}
++			set_bit(uid - SUSFS_PRIORITY_UID_FILTER_MIN_UID, bits);
++			SUSFS_LOGI("uid '%u' is now added to priority_uid_filter_bitmap\n", uid);
++			continue;
++		}
++
+ 		if (!susfs_is_valid_app_name(token)) {
+ 			SUSFS_LOGE("invalid app name '%s'\n", token);
+ 			return -EINVAL;
+@@ -1655,6 +1679,7 @@ void susfs_set_priority_uid_filter(void __user **user_info) {
+ 
+ 	if (is_uid_filter_set_before)
+ 		SUSFS_LOGI("renewing the priority uid filter\n");
++	WRITE_ONCE(susfs_priority_uid_filter_all, false);
+ 	err = susfs_parse_priority_app_names(info->app_strings, new_bitmap->bits, true);
+ 
+ 	susfs_restore_creds(orig_cred);
+@@ -1739,6 +1764,7 @@ static int susfs_priority_app_strings_worker(void *data) {
+ 	if (!new_bitmap)
+ 		goto out_restore_creds;
+ 
++	WRITE_ONCE(susfs_priority_uid_filter_all, false);
+ 	/* the apps that are uninstalled already are skipped */
+ 	ret = susfs_parse_priority_app_names(app_strings, new_bitmap->bits, true);
+ 	if (ret)
+@@ -1800,6 +1826,9 @@ bool susfs_is_priority_uid_filtered(uid_t uid) {
+ 		app_id > SUSFS_PRIORITY_UID_FILTER_MAX_UID)
+ 		return false;
+ 
++	if (READ_ONCE(susfs_priority_uid_filter_all))
++		return true;
++
+ 	/* no need rcu_read_lock() and rcu_read_unlock() here as caller already holds it */
+ 	bitmap = rcu_dereference(priority_uid_filter_bitmap);
+ 	if (likely(bitmap)) {
+-- 
+2.43.0
+
