@@ -12,6 +12,25 @@
 
 ---
 
+## This Fork: Pixel 9a (android14-6.1, 6.1.145) + KernelSU-Next
+
+**Actions → Build Kernels → Run workflow** with the defaults builds exactly one kernel:
+
+| Input | Default here |
+| --- | --- |
+| Kernel Version | `6.1.x-android14` |
+| OS patch level | `2025-09` (6.1.145) |
+| Root Flavor | `KernelSU-Next` |
+| Features | SUSFS, NoMount, BBG, Networking, DroidSpaces, USB Arsenal, NTSync, Ptrace, Unicode, BPF |
+
+For KernelSU-Next every moving part resolves to its newest commit at run time, in either commit mode: pershoot's `KernelSU-Next@dev-susfs` (rebased onto the official `dev` tip; the manager APK is paired with that upstream commit), simonpunk's `susfs4ksu@gki-android14-6.1` plus pershoot's SUSFS fixes, `nomount@dev`, Baseband-guard, Droidspaces-OSS, USB-Arsenal, `kernel_patches` and AnyKernel3.
+
+Left off on purpose: **fanotify** (enabling it moves `struct user_namespace` / `struct fsnotify_group` and breaks prebuilt vendor modules; the opt-in `use_fanotify` port avoids that but is new) and **Performance** (experimental, opt-in upstream).
+
+Download the `*-AnyKernel3`, `*-BuildInfo`, KernelSU-Next manager and `NoMount-Metamodule` artifacts, keep the stock `boot.img`, then follow the [Installation Guide](docs/installation.md). If a run cannot publish its `nightly` prerelease, set **Settings → Actions → General → Workflow permissions** to *Read and write*.
+
+---
+
 ## About
 
 Generic kernels built on [Google's GKI sources](https://android.googlesource.com/kernel/common/) with KernelSU and SUSFS for root hiding and detection evasion — broad compatibility, not guaranteed for every device.
