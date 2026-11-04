@@ -18,3 +18,9 @@ runs:
           CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
           CONFIG_KSU_SUSFS_SUS_MAP=y
           CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          # susfs4ksu f06acf7 ("Make priority_uid_filter as new feature",
+          # 2026-11-02) turned the priority uid filter into its own Kconfig
+          # switch. It defaults to y today; stating it keeps a full-feature
+          # build full if that default ever moves. Roots whose Kconfig does
+          # not declare it simply ignore the line.
+          CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER=y
