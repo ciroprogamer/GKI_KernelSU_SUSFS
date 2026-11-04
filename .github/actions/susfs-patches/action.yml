@@ -36,6 +36,17 @@ runs:
       run: |
         python3 "${{ github.workspace }}/.github/scripts/susfs_guard_priority_helpers.py" fs/susfs.c
 
+    - name: Match sus types by value, not by hash bucket
+      # Upstream's SUS_TYPE_HLIST entries store no type value, so
+      # susfs_is_sus_type_rcu() reports every type sharing a bucket with a
+      # KSU/module-added type as hidden. With selinux_hide on, setcon() to a
+      # colliding app domain then fails with -EINVAL and those apps cannot
+      # start. Store the value and compare it. No-op once upstream fixes it.
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/common
+      run: |
+        python3 "${{ github.workspace }}/.github/scripts/susfs_sus_type_exact_match.py" fs/susfs.c
+
     # Pre-i_user_ns() kernels (5.10 / 5.15, and old 6.1) pass the mount namespace
     # explicitly to i_uid_into_mnt(); fs/susfs.c is written against the newer
     # i_user_ns() helper, so it fails to compile there:
