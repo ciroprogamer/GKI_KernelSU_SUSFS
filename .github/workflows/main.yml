@@ -84,6 +84,13 @@ on:
         description: "NoMount"
         type: boolean
         default: true
+      nomount_branch:
+        description: "NoMount branch (dev = newest commits; master = last release, v2.2.0)"
+        type: choice
+        options:
+          - dev
+          - master
+        default: dev
       use_bbg:
         description: "Baseband Guard"
         type: boolean
@@ -314,9 +321,12 @@ jobs:
             fi
           }
 
-          # NoMount (pinned in verified mode, else dev tip)
-          # NoMount always tracks the dev tip - never pinned, in either mode.
-          emit nomount_commit "$(resolve_sha https://github.com/maxsteeel/nomount.git refs/heads/dev)"
+          # NoMount is never pinned, in either mode: it tracks the tip of the
+          # selected branch (fork input). dev carries the newest work, master
+          # the last release; both speak driver protocol v22.
+          NOMOUNT_BRANCH="${{ inputs.nomount_branch || 'dev' }}"
+          case "$NOMOUNT_BRANCH" in dev|master) ;; *) echo "ERROR: unknown nomount_branch '$NOMOUNT_BRANCH'" >&2; exit 1 ;; esac
+          emit nomount_commit "$(resolve_sha https://github.com/maxsteeel/nomount.git "refs/heads/${NOMOUNT_BRANCH}")"
 
           # KernelSU-Next manager - always built from the official repo's dev branch.
           # pershoot's fork is used only for the kernel SUSFS integration (root_commit below),
