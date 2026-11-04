@@ -25,7 +25,10 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        GLIBC_VERSION="$(ldd --version 2>/dev/null | head -n 1 | awk '{print $NF}')"
+        # awk drains the whole stream. `| head -n 1` could close the pipe while
+        # ldd (a shell script) was still printing; under pipefail the SIGPIPE
+        # (rc 141) failed the step at random.
+        GLIBC_VERSION="$(ldd --version 2>/dev/null | awk 'NR == 1 {print $NF}')"
         echo "[*] Detected GLIBC version: $GLIBC_VERSION"
         if [ "$(printf '%s\n' "2.38" "$GLIBC_VERSION" | sort -V | head -n 1)" = "2.38" ]; then
           echo "[*] GLIBC >= 2.38, attempting Makefile fix."
@@ -96,7 +99,7 @@ runs:
         echo "" >> "$SUMMARY_FILE"
         echo "### Fix Status" >> "$SUMMARY_FILE"
 
-        GLIBC_VERSION="$(ldd --version 2>/dev/null | head -n 1 | awk '{print $NF}')"
+        GLIBC_VERSION="$(ldd --version 2>/dev/null | awk 'NR == 1 {print $NF}')"
         if [ "$(printf '%s\n' "2.38" "$GLIBC_VERSION" | sort -V | head -n 1)" = "2.38" ]; then
           if [ "${MAKEFILE_FIXED:-false}" = "true" ]; then
             echo "- Makefile EXTRA_CFLAGS fix: applied" >> "$SUMMARY_FILE"
